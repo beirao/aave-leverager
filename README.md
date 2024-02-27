@@ -22,7 +22,7 @@ forge test --fork-url https://eth.llamarpc.com
 forge script script/LeveragerDeploy.s.sol --fork-url https://eth.llamarpc.com
 ```
 
-### Polygone
+### Polygon
 
 ```
 forge test --fork-url https://polygon.llamarpc.com
