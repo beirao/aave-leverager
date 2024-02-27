@@ -115,14 +115,15 @@ contract Leverager is IFlashLoanReceiver {
     /**
      * @notice deleverage an asset using flashloan.
      * @dev Before calling loop() users will need to call: 
-     *     - ERC20(_asset).approve(address(this), type(uint256).max) 
+     *     - ERC20(aToken).approve(address(this), type(uint256).max) 
      * @param _asset to deleverage
      */
     function _deleverage(
         address _asset
     ) internal {
-        address debtToken_ = lendingPool.getReserveData(_asset).variableDebtTokenAddress;
         if (_asset == address(0)) revert Leverager__INVALID_INPUT();
+
+        address debtToken_ = lendingPool.getReserveData(_asset).variableDebtTokenAddress;
 
         address[] memory assets_ = new address[](1);
         assets_[0] = _asset;
