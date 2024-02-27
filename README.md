@@ -18,11 +18,13 @@ This deployment script uses [CreateX](https://createx.rocks) to have the same de
 ### Ethereum mainnet
 
 ```
+forge test --fork-url https://eth.llamarpc.com
 forge script script/LeveragerDeploy.s.sol --fork-url https://eth.llamarpc.com
 ```
 
 ### Polygone
 
 ```
+forge test --fork-url https://polygon.llamarpc.com
 forge script script/LeveragerDeploy.s.sol --fork-url https://polygon.llamarpc.com
 ```

@@ -1,31 +1,42 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
-import {Test, console2} from "forge-std/Test.sol";
-import {Leverager} from "../src/Leverager.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "../src/interfaces/IDebtTokenBase.sol";
-import "../src/interfaces/ILendingPool.sol";
 import "forge-std/console.sol";
+import "forge-std/Test.sol";
+
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "lib/createx/src/CreateX.sol";
 
-CreateX constant createx = CreateX(address(0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed)); // all chain
+import "src/Leverager.sol";
+import "src/interfaces/IDebtTokenBase.sol";
+import "src/interfaces/ILendingPool.sol";
+import "src/interfaces/ILendingPoolAddressesProvider.sol";
+import "script/Constants.sol";
 
-address constant addressesProvider = address(0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5); // mainnet
-address constant weth = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2); // mainnet
-address constant aweth = address(0x030bA81f1c18d280636F32af80b9AAd02Cf0854e); // mainnet
-address constant wethDebtToken = address(0xF63B34710400CAd3e044cFfDcAb00a0f32E33eCf); // mainnet
-
-contract LeveragerTest is Test {
+contract LeveragerTest is Test, Constants {
     Leverager l;
     address alice = address(0xa11ce);
-    uint initialMint = 111 ether;
+    uint initialMint = 33 ether;
+
+    address aweth;
+    address wethDebtToken;
+
+    // uint256 forkIdEth;
+    // uint256 forkIdArb;
 
     function setUp() public {
+        // forkIdEth = vm.createFork("https://eth.llamarpc.com");
+        // forkIdArb = vm.createFork("https://arbitrum.llamarpc.com");
+
         address arg1 = addressesProvider;
         address arg2 = weth;
         bytes memory args = abi.encode(arg1, arg2);
         bytes memory cachedInitCode = abi.encodePacked(type(Leverager).creationCode, args);
+
+        aweth = ILendingPool(ILendingPoolAddressesProvider(addressesProvider).getLendingPool())
+                    .getReserveData(weth).aTokenAddress;
+        wethDebtToken = ILendingPool(ILendingPoolAddressesProvider(addressesProvider).getLendingPool())
+                    .getReserveData(weth).variableDebtTokenAddress;
 
         l = Leverager(payable(createx.deployCreate3{value: 0}(bytes32("bytemasons"), cachedInitCode)));
         deal({ token: weth, to: alice, give: initialMint });
@@ -33,6 +44,7 @@ contract LeveragerTest is Test {
     }
 
     function test_leverageERC20(uint initialDeposit, uint borrowAmount) public {
+        vm.assume(initialDeposit > 1e8);
         vm.assume(initialDeposit < initialMint);
         vm.assume(borrowAmount < initialDeposit);
         vm.assume(borrowAmount != 0);
@@ -42,9 +54,70 @@ contract LeveragerTest is Test {
         IDebtTokenBase(wethDebtToken).approveDelegation(address(l), borrowAmount);
         l.leverageERC20(weth, initialDeposit, borrowAmount, 1.2e18);
 
-        assertApproxEqAbs(IERC20(weth).balanceOf(alice), 111 ether - initialDeposit, 1);
-        assertApproxEqAbs(IERC20(aweth).balanceOf(alice), initialDeposit + borrowAmount, 1);
-        assertApproxEqAbs(IERC20(wethDebtToken).balanceOf(alice), borrowAmount, 1);
+        assertApproxEqAbs(IERC20(weth).balanceOf(alice), initialMint - initialDeposit, 1, "1");
+        assertApproxEqAbs(IERC20(aweth).balanceOf(alice), initialDeposit + borrowAmount, 1, "2");
+        assertApproxEqAbs(IERC20(wethDebtToken).balanceOf(alice), borrowAmount, 1, "3");
+
+        assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
+        assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
+        assertEq(IERC20(wethDebtToken).balanceOf(address(l)), 0, "6");
+    }
+
+    function test_leverageERC20PostDeposit(uint initialDeposit, uint borrowAmount) public {
+        vm.assume(initialDeposit > 1e8);
+        vm.assume(initialDeposit < initialMint);
+        vm.assume(borrowAmount < initialDeposit);
+        vm.assume(borrowAmount != 0);
+
+        vm.startPrank(alice);
+        IERC20(weth).approve(address(l.LENDING_POOL()), initialDeposit);
+        l.LENDING_POOL().deposit(weth, initialDeposit, alice, 0);
+        IDebtTokenBase(wethDebtToken).approveDelegation(address(l), borrowAmount);
+        l.leverageERC20(weth, 0, borrowAmount, 1.2e18);
+
+        assertApproxEqAbs(IERC20(weth).balanceOf(alice), initialMint - initialDeposit, 1, "1");
+        assertApproxEqAbs(IERC20(aweth).balanceOf(alice), initialDeposit + borrowAmount, 1, "2");
+        assertApproxEqAbs(IERC20(wethDebtToken).balanceOf(alice), borrowAmount, 1, "3");
+
+        assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
+        assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
+        assertEq(IERC20(wethDebtToken).balanceOf(address(l)), 0, "6");
+    }
+
+    function test_leverageNativePostDepositERC20(uint initialDeposit, uint borrowAmount) public {
+        vm.assume(initialDeposit > 1e8);
+        vm.assume(initialDeposit < initialMint);
+        vm.assume(borrowAmount < initialDeposit);
+        vm.assume(borrowAmount != 0);
+
+        vm.startPrank(alice);
+        IERC20(weth).approve(address(l.LENDING_POOL()), initialDeposit);
+        l.LENDING_POOL().deposit(weth, initialDeposit, alice, 0);
+        IDebtTokenBase(wethDebtToken).approveDelegation(address(l), borrowAmount);
+        l.leverageNative(borrowAmount, 1.2e18);
+
+        assertApproxEqAbs(IERC20(weth).balanceOf(alice), initialMint - initialDeposit, 1, "1");
+        assertApproxEqAbs(IERC20(aweth).balanceOf(alice), initialDeposit + borrowAmount, 1, "2");
+        assertApproxEqAbs(IERC20(wethDebtToken).balanceOf(alice), borrowAmount, 1, "3");
+
+        assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
+        assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
+        assertEq(IERC20(wethDebtToken).balanceOf(address(l)), 0, "6");
+    }
+
+    function test_leverageNative(uint initialDeposit, uint borrowAmount) public {
+        vm.assume(initialDeposit > 1e8);
+        vm.assume(initialDeposit < initialMint);
+        vm.assume(borrowAmount < initialDeposit);
+        vm.assume(borrowAmount != 0);
+
+        vm.startPrank(alice);
+        IDebtTokenBase(wethDebtToken).approveDelegation(address(l), borrowAmount);
+        l.leverageNative{value: initialDeposit}(borrowAmount, 1.2e18);
+
+        assertApproxEqAbs(alice.balance, initialMint - initialDeposit, 1, "1");
+        assertApproxEqAbs(IERC20(aweth).balanceOf(alice), initialDeposit + borrowAmount, 1, "2");
+        assertApproxEqAbs(IERC20(wethDebtToken).balanceOf(alice), borrowAmount, 1, "3");
 
         assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
         assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
@@ -59,27 +132,9 @@ contract LeveragerTest is Test {
         IERC20(aweth).approve(address(l), type(uint256).max);
         l.deleverageERC20(weth);
 
-        assertApproxEqAbs(IERC20(weth).balanceOf(alice), 111 ether, 0.01 ether);
-        assertEq(IERC20(aweth).balanceOf(alice), 0);
-        assertEq(IERC20(wethDebtToken).balanceOf(alice), 0);
-
-        assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
-        assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
-        assertEq(IERC20(wethDebtToken).balanceOf(address(l)), 0, "6");
-    }
-
-    function test_leverageNative(uint initialDeposit, uint borrowAmount) public {
-        vm.assume(initialDeposit < initialMint);
-        vm.assume(borrowAmount < initialDeposit);
-        vm.assume(borrowAmount != 0);
-
-        vm.startPrank(alice);
-        IDebtTokenBase(wethDebtToken).approveDelegation(address(l), borrowAmount);
-        l.leverageNative{value: initialDeposit}(borrowAmount, 1.2e18);
-
-        assertApproxEqAbs(alice.balance, 111 ether - initialDeposit, 1, "1");
-        assertApproxEqAbs(IERC20(aweth).balanceOf(alice), initialDeposit + borrowAmount, 1, "2");
-        assertApproxEqAbs(IERC20(wethDebtToken).balanceOf(alice), borrowAmount, 1, "3");
+        assertApproxEqAbs(IERC20(weth).balanceOf(alice), initialMint, 0.01 ether, "1");
+        assertEq(IERC20(aweth).balanceOf(alice), 0, "2");
+        assertEq(IERC20(wethDebtToken).balanceOf(alice), 0, "3");
 
         assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
         assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
@@ -93,7 +148,25 @@ contract LeveragerTest is Test {
         IERC20(aweth).approve(address(l), type(uint256).max);
         l.deleverageNative();
 
-        assertApproxEqAbs(alice.balance, 111 ether, 0.01 ether, "1");
+        assertApproxEqAbs(alice.balance, initialMint, 0.01 ether, "1");
+        assertEq(IERC20(aweth).balanceOf(alice), 0, "2");
+        assertEq(IERC20(wethDebtToken).balanceOf(alice), 0, "3");
+
+        assertEq(IERC20(weth).balanceOf(address(l)), 0, "4");
+        assertEq(IERC20(aweth).balanceOf(address(l)), 0, "5");
+        assertEq(IERC20(wethDebtToken).balanceOf(address(l)), 0, "6");
+    }
+
+    function testFail_leverageERC20InvalidHF() public {
+        uint initialDeposit = 2 ether;
+        uint borrowAmount = 1 ether;
+
+        vm.startPrank(alice);
+        IERC20(weth).approve(address(l), initialDeposit);
+        IDebtTokenBase(wethDebtToken).approveDelegation(address(l), borrowAmount);
+        l.leverageERC20(weth, initialDeposit, borrowAmount, 4e18);
+
+        assertEq(IERC20(weth).balanceOf(alice), initialMint, "1");
         assertEq(IERC20(aweth).balanceOf(alice), 0, "2");
         assertEq(IERC20(wethDebtToken).balanceOf(alice), 0, "3");
 

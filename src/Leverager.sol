@@ -15,7 +15,7 @@ contract Leverager is IFlashLoanReceiver {
     IWETH public immutable weth;
     ILendingPool private immutable lendingPool;
     ILendingPoolAddressesProvider private immutable addressesProvider;
-    uint256 public constant MIN_HF = 1.1e18;
+    uint256 public constant MIN_HF = 1.05e18;
 
     error Leverager__INVALID_INPUT();
     error Leverager__INVALID_HEALTH_FACTOR();
@@ -36,7 +36,8 @@ contract Leverager is IFlashLoanReceiver {
         uint256 _minHealthFactor
     ) external payable {
         if (address(weth) == address(0)) revert Leverager__NATIVE_LEVERAGE_NOT_ACTIVATED();
-        weth.deposit{value: msg.value}();
+        if (msg.value != 0)
+            weth.deposit{value: msg.value}();
         _leverage(address(weth), msg.value, _borrowAmount, _minHealthFactor);
     }
 
@@ -46,7 +47,8 @@ contract Leverager is IFlashLoanReceiver {
         uint256 _borrowAmount,
         uint256 _minHealthFactor
     ) external {
-        IERC20(_asset).safeTransferFrom(msg.sender, address(this), _initialDeposit);
+        if (_initialDeposit != 0) 
+            IERC20(_asset).safeTransferFrom(msg.sender, address(this), _initialDeposit);
         _leverage(_asset, _initialDeposit, _borrowAmount, _minHealthFactor);
     }
 
@@ -62,7 +64,9 @@ contract Leverager is IFlashLoanReceiver {
         address _asset
     ) external {
         _deleverage(_asset);
-        IERC20(_asset).safeTransfer(msg.sender, IERC20(_asset).balanceOf(address(this)));
+        uint256 assetBalance_ = IERC20(_asset).balanceOf(address(this));
+        if (assetBalance_ != 0)
+            IERC20(_asset).safeTransfer(msg.sender, assetBalance_);
     }
 
     /**
@@ -111,8 +115,7 @@ contract Leverager is IFlashLoanReceiver {
     /**
      * @notice deleverage an asset using flashloan.
      * @dev Before calling loop() users will need to call: 
-     *     - DebtToken.approveDelegation(address(Leverager), _borrowAmount)
-     *     - ERC20(_asset).approve(address(this), type(uint256).max) //! type(uint256).max
+     *     - ERC20(_asset).approve(address(this), type(uint256).max) 
      * @param _asset to deleverage
      */
     function _deleverage(
@@ -157,7 +160,6 @@ contract Leverager is IFlashLoanReceiver {
         if (isLeveraging) {
             uint256 amountToDeposit_ = initialDeposit_ + _amounts[0];
             IERC20(_assets[0]).approve(address(lendingPool), amountToDeposit_);
-            
             lendingPool.deposit(
                 _assets[0],
                 amountToDeposit_,

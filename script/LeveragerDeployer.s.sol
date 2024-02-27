@@ -19,6 +19,6 @@ contract LeveragerDeployer is Script, Constants {
 
         address l = createx.deployCreate3{value: 0}(bytes32("bytemasons"), cachedInitCode);
 
-        console.log("Levrager address: ", l);
+        console.log("Leverager address: ", l);
     }
 }
