@@ -7,7 +7,9 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../src/interfaces/IDebtTokenBase.sol";
 import "../src/interfaces/ILendingPool.sol";
 import "forge-std/console.sol";
+import "lib/createx/src/CreateX.sol";
 
+CreateX constant createx = CreateX(address(0xba5Ed099633D3B313e4D5F7bdc1305d3c28ba5Ed)); // all chain
 
 address constant addressesProvider = address(0xB53C1a33016B2DC2fF3653530bfF1848a515c8c5); // mainnet
 address constant weth = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2); // mainnet
@@ -20,7 +22,12 @@ contract LeveragerTest is Test {
     uint initialMint = 111 ether;
 
     function setUp() public {
-        l = new Leverager(addressesProvider, weth);
+        address arg1 = addressesProvider;
+        address arg2 = weth;
+        bytes memory args = abi.encode(arg1, arg2);
+        bytes memory cachedInitCode = abi.encodePacked(type(Leverager).creationCode, args);
+
+        l = Leverager(payable(createx.deployCreate3{value: 0}(bytes32("bytemasons"), cachedInitCode)));
         deal({ token: weth, to: alice, give: initialMint });
         deal(alice, initialMint);
     }
